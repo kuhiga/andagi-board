@@ -1,349 +1,336 @@
 "use client";
+import React, { useEffect, useState } from "react";
+import { FiPlus, FiTrash } from "react-icons/fi";
+import { motion } from "framer-motion";
+import { FaFire } from "react-icons/fa";
 
-import PlusIcon from "../../icons/PlusIcon";
-import { useMemo, useState } from "react";
-import { Column, Id, Task } from "../types";
-import ColumnContainer from "./ColumnContainer";
-import {
-  DndContext,
-  DragEndEvent,
-  DragOverEvent,
-  DragOverlay,
-  DragStartEvent,
-  PointerSensor,
-  useSensor,
-  useSensors,
-} from "@dnd-kit/core";
-import { SortableContext, arrayMove } from "@dnd-kit/sortable";
-import { createPortal } from "react-dom";
-import TaskCard from "./TaskCard";
-
-const defaultCols: Column[] = [
-  {
-    id: "todo",
-    title: "Todo",
-  },
-  {
-    id: "doing",
-    title: "Work in progress",
-  },
-  {
-    id: "done",
-    title: "Done",
-  },
-];
-
-const defaultTasks: Task[] = [
-  {
-    id: "1",
-    columnId: "todo",
-    content: "List admin APIs for dashboard",
-  },
-  {
-    id: "2",
-    columnId: "todo",
-    content:
-      "Develop user registration functionality with OTP delivered on SMS after email confirmation and phone number confirmation",
-  },
-  {
-    id: "3",
-    columnId: "doing",
-    content: "Conduct security testing",
-  },
-  {
-    id: "4",
-    columnId: "doing",
-    content: "Analyze competitors",
-  },
-  {
-    id: "5",
-    columnId: "done",
-    content: "Create UI kit documentation",
-  },
-  {
-    id: "6",
-    columnId: "done",
-    content: "Dev meeting",
-  },
-  {
-    id: "7",
-    columnId: "done",
-    content: "Deliver dashboard prototype",
-  },
-  {
-    id: "8",
-    columnId: "todo",
-    content: "Optimize application performance",
-  },
-  {
-    id: "9",
-    columnId: "todo",
-    content: "Implement data validation",
-  },
-  {
-    id: "10",
-    columnId: "todo",
-    content: "Design database schema",
-  },
-  {
-    id: "11",
-    columnId: "todo",
-    content: "Integrate SSL web certificates into workflow",
-  },
-  {
-    id: "12",
-    columnId: "doing",
-    content: "Implement error logging and monitoring",
-  },
-  {
-    id: "13",
-    columnId: "doing",
-    content: "Design and implement responsive UI",
-  },
-];
-
-function KanbanBoard() {
-  const [columns, setColumns] = useState<Column[]>(defaultCols);
-  const columnsId = useMemo(() => columns.map((col) => col.id), [columns]);
-
-  const [tasks, setTasks] = useState<Task[]>(defaultTasks);
-
-  const [activeColumn, setActiveColumn] = useState<Column | null>(null);
-
-  const [activeTask, setActiveTask] = useState<Task | null>(null);
-
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 10,
-      },
-    })
+export const NotionKanban = () => {
+  return (
+    <div className="h-screen w-full bg-neutral-900 text-neutral-50">
+      <Board />
+    </div>
   );
+};
+
+const Board = () => {
+  const [cards, setCards] = useState([]);
+  const [hasChecked, setHasChecked] = useState(false);
+
+  useEffect(() => {
+    hasChecked && localStorage.setItem("cards", JSON.stringify(cards));
+  }, [cards, hasChecked]);
+
+  useEffect(() => {
+    const cardData = localStorage.getItem("cards");
+    setCards(cardData ? JSON.parse(cardData) : []);
+    setHasChecked(true);
+  }, []);
+  return (
+    <div className="flex h-full w-full gap-3 overflow-scroll p-12">
+      <Column
+        title="Backlog"
+        column="backlog"
+        headingColor="text-neutral-500"
+        cards={cards}
+        setCards={setCards}
+      />
+      <Column
+        title="TODO"
+        column="todo"
+        headingColor="text-yellow-200"
+        cards={cards}
+        setCards={setCards}
+      />
+      <Column
+        title="In progress"
+        column="doing"
+        headingColor="text-blue-200"
+        cards={cards}
+        setCards={setCards}
+      />
+      <Column
+        title="Complete"
+        column="done"
+        headingColor="text-emerald-200"
+        cards={cards}
+        setCards={setCards}
+      />
+      <BurnBarrel setCards={setCards} />
+    </div>
+  );
+};
+
+const Column = ({ title, headingColor, cards, column, setCards }) => {
+  const [active, setActive] = useState(false);
+
+  const handleDragStart = (e, card) => {
+    e.dataTransfer.setData("cardId", card.id);
+  };
+
+  const handleDragEnd = (e) => {
+    const cardId = e.dataTransfer.getData("cardId");
+
+    setActive(false);
+    clearHighlights();
+
+    const indicators = getIndicators();
+    const { element } = getNearestIndicator(e, indicators);
+
+    const before = element.dataset.before || "-1";
+
+    if (before !== cardId) {
+      let copy = [...cards];
+
+      let cardToTransfer = copy.find((c) => c.id === cardId);
+      if (!cardToTransfer) return;
+      cardToTransfer = { ...cardToTransfer, column };
+
+      copy = copy.filter((c) => c.id !== cardId);
+
+      const moveToBack = before === "-1";
+
+      if (moveToBack) {
+        copy.push(cardToTransfer);
+      } else {
+        const insertAtIndex = copy.findIndex((el) => el.id === before);
+        if (insertAtIndex === undefined) return;
+
+        copy.splice(insertAtIndex, 0, cardToTransfer);
+      }
+
+      setCards(copy);
+    }
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    highlightIndicator(e);
+
+    setActive(true);
+  };
+
+  const clearHighlights = (els?) => {
+    const indicators = els || getIndicators();
+
+    indicators.forEach((i) => {
+      i.style.opacity = "0";
+    });
+  };
+
+  const highlightIndicator = (e) => {
+    const indicators = getIndicators();
+
+    clearHighlights(indicators);
+
+    const el = getNearestIndicator(e, indicators);
+
+    el.element.style.opacity = "1";
+  };
+
+  const getNearestIndicator = (e, indicators) => {
+    const DISTANCE_OFFSET = 50;
+
+    const el = indicators.reduce(
+      (closest, child) => {
+        const box = child.getBoundingClientRect();
+
+        const offset = e.clientY - (box.top + DISTANCE_OFFSET);
+
+        if (offset < 0 && offset > closest.offset) {
+          return { offset: offset, element: child };
+        } else {
+          return closest;
+        }
+      },
+      {
+        offset: Number.NEGATIVE_INFINITY,
+        element: indicators[indicators.length - 1],
+      }
+    );
+
+    return el;
+  };
+
+  const getIndicators = () => {
+    return Array.from(document.querySelectorAll(`[data-column="${column}"]`));
+  };
+
+  const handleDragLeave = () => {
+    clearHighlights();
+    setActive(false);
+  };
+
+  const filteredCards = cards.filter((c) => c.column === column);
+
+  return (
+    <div className="w-56 shrink-0">
+      <div className="mb-3 flex items-center justify-between">
+        <h3 className={`font-medium ${headingColor}`}>{title}</h3>
+        <span className="rounded text-sm text-neutral-400">
+          {filteredCards.length}
+        </span>
+      </div>
+      <div
+        onDrop={handleDragEnd}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        className={`h-full w-full transition-colors ${
+          active ? "bg-neutral-800/50" : "bg-neutral-800/0"
+        }`}>
+        {filteredCards.map((c) => {
+          return <Card key={c.id} {...c} handleDragStart={handleDragStart} />;
+        })}
+        <DropIndicator beforeId={null} column={column} />
+        <AddCard column={column} setCards={setCards} />
+      </div>
+    </div>
+  );
+};
+
+const Card = ({ title, id, column, handleDragStart }) => {
+  return (
+    <>
+      <DropIndicator beforeId={id} column={column} />
+      <motion.div
+        layout
+        layoutId={id}
+        draggable="true"
+        onDragStart={(e) => handleDragStart(e, { title, id, column })}
+        className="cursor-grab rounded border border-neutral-700 bg-neutral-800 p-3 active:cursor-grabbing">
+        <p className="text-sm text-neutral-100">{title}</p>
+      </motion.div>
+    </>
+  );
+};
+
+const DropIndicator = ({ beforeId, column }) => {
+  return (
+    <div
+      data-before={beforeId || "-1"}
+      data-column={column}
+      className="my-0.5 h-0.5 w-full bg-violet-400 opacity-0"
+    />
+  );
+};
+
+const BurnBarrel = ({ setCards }) => {
+  const [active, setActive] = useState(false);
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    setActive(true);
+  };
+
+  const handleDragLeave = () => {
+    setActive(false);
+  };
+
+  const handleDragEnd = (e) => {
+    const cardId = e.dataTransfer.getData("cardId");
+
+    setCards((pv) => pv.filter((c) => c.id !== cardId));
+
+    setActive(false);
+  };
 
   return (
     <div
-      className="
-        m-auto
-        flex
-        min-h-screen
-        w-full
-        items-center
-        overflow-x-auto
-        overflow-y-hidden
-        px-[40px]
-    ">
-      <DndContext
-        sensors={sensors}
-        onDragStart={onDragStart}
-        onDragEnd={onDragEnd}
-        onDragOver={onDragOver}>
-        <div className="m-auto flex gap-4">
-          <div className="flex gap-4">
-            <SortableContext items={columnsId}>
-              {columns.map((col) => (
-                <ColumnContainer
-                  key={col.id}
-                  column={col}
-                  deleteColumn={deleteColumn}
-                  updateColumn={updateColumn}
-                  createTask={createTask}
-                  deleteTask={deleteTask}
-                  updateTask={updateTask}
-                  tasks={tasks.filter((task) => task.columnId === col.id)}
-                />
-              ))}
-            </SortableContext>
-          </div>
-          <button
-            onClick={() => {
-              createNewColumn();
-            }}
-            className="
-      h-[60px]
-      w-[350px]
-      min-w-[350px]
-      cursor-pointer
-      rounded-lg
-      bg-mainBackgroundColor
-      border-2
-      border-columnBackgroundColor
-      p-4
-      ring-rose-500
-      hover:ring-2
-      flex
-      gap-2
-      ">
-            <PlusIcon />
-            Add Column
-          </button>
-        </div>
-
-        {typeof document !== "undefined" &&
-          createPortal(
-            <DragOverlay>
-              {activeColumn && (
-                <ColumnContainer
-                  column={activeColumn}
-                  deleteColumn={deleteColumn}
-                  updateColumn={updateColumn}
-                  createTask={createTask}
-                  deleteTask={deleteTask}
-                  updateTask={updateTask}
-                  tasks={tasks.filter(
-                    (task) => task.columnId === activeColumn.id
-                  )}
-                />
-              )}
-              {activeTask && (
-                <TaskCard
-                  task={activeTask}
-                  deleteTask={deleteTask}
-                  updateTask={updateTask}
-                />
-              )}
-            </DragOverlay>,
-            document.body
-          )}
-      </DndContext>
+      onDrop={handleDragEnd}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      className={`mt-10 grid h-56 w-56 shrink-0 place-content-center rounded border text-3xl ${
+        active
+          ? "border-red-800 bg-red-800/20 text-red-500"
+          : "border-neutral-500 bg-neutral-500/20 text-neutral-500"
+      }`}>
+      {active ? <FaFire className="animate-bounce" /> : <FiTrash />}
     </div>
   );
+};
 
-  function createTask(columnId: Id) {
-    const newTask: Task = {
-      id: generateId(),
-      columnId,
-      content: `Task ${tasks.length + 1}`,
+const AddCard = ({ column, setCards }) => {
+  const [text, setText] = useState("");
+  const [adding, setAdding] = useState(false);
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+
+    if (!text.trim().length) return;
+
+    const newCard = {
+      column,
+      title: text.trim(),
+      id: Math.random().toString(),
     };
 
-    setTasks([...tasks, newTask]);
-  }
+    setCards((pv) => [...pv, newCard]);
 
-  function deleteTask(id: Id) {
-    const newTasks = tasks.filter((task) => task.id !== id);
-    setTasks(newTasks);
-  }
+    setAdding(false);
+  };
 
-  function updateTask(id: Id, content: string) {
-    const newTasks = tasks.map((task) => {
-      if (task.id !== id) return task;
-      return { ...task, content };
-    });
+  return (
+    <>
+      {adding ? (
+        <motion.form layout onSubmit={handleSubmit}>
+          <textarea
+            onChange={(e) => setText(e.target.value)}
+            autoFocus
+            placeholder="Add new task..."
+            className="w-full rounded border border-violet-400 bg-violet-400/20 p-3 text-sm text-neutral-50 placeholder-violet-300 focus:outline-0"
+          />
+          <div className="mt-1.5 flex items-center justify-end gap-1.5">
+            <button
+              onClick={() => setAdding(false)}
+              className="px-3 py-1.5 text-xs text-neutral-400 transition-colors hover:text-neutral-50">
+              Close
+            </button>
+            <button
+              type="submit"
+              className="flex items-center gap-1.5 rounded bg-neutral-50 px-3 py-1.5 text-xs text-neutral-950 transition-colors hover:bg-neutral-300">
+              <span>Add</span>
+              <FiPlus />
+            </button>
+          </div>
+        </motion.form>
+      ) : (
+        <motion.button
+          layout
+          onClick={() => setAdding(true)}
+          className="flex w-full items-center gap-1.5 px-3 py-1.5 text-xs text-neutral-400 transition-colors hover:text-neutral-50">
+          <span>Add card</span>
+          <FiPlus />
+        </motion.button>
+      )}
+    </>
+  );
+};
 
-    setTasks(newTasks);
-  }
+const DEFAULT_CARDS = [
+  // BACKLOG
+  { title: "Look into render bug in dashboard", id: "1", column: "backlog" },
+  { title: "SOX compliance checklist", id: "2", column: "backlog" },
+  { title: "[SPIKE] Migrate to Azure", id: "3", column: "backlog" },
+  { title: "Document Notifications service", id: "4", column: "backlog" },
+  // TODO
+  {
+    title: "Research DB options for new microservice",
+    id: "5",
+    column: "todo",
+  },
+  { title: "Postmortem for outage", id: "6", column: "todo" },
+  { title: "Sync with product on Q3 roadmap", id: "7", column: "todo" },
 
-  function createNewColumn() {
-    const columnToAdd: Column = {
-      id: generateId(),
-      title: `Column ${columns.length + 1}`,
-    };
-
-    setColumns([...columns, columnToAdd]);
-  }
-
-  function deleteColumn(id: Id) {
-    const filteredColumns = columns.filter((col) => col.id !== id);
-    setColumns(filteredColumns);
-
-    const newTasks = tasks.filter((t) => t.columnId !== id);
-    setTasks(newTasks);
-  }
-
-  function updateColumn(id: Id, title: string) {
-    const newColumns = columns.map((col) => {
-      if (col.id !== id) return col;
-      return { ...col, title };
-    });
-
-    setColumns(newColumns);
-  }
-
-  function onDragStart(event: DragStartEvent) {
-    if (event.active.data.current?.type === "Column") {
-      setActiveColumn(event.active.data.current.column);
-      return;
-    }
-
-    if (event.active.data.current?.type === "Task") {
-      setActiveTask(event.active.data.current.task);
-      return;
-    }
-  }
-
-  function onDragEnd(event: DragEndEvent) {
-    setActiveColumn(null);
-    setActiveTask(null);
-
-    const { active, over } = event;
-    if (!over) return;
-
-    const activeId = active.id;
-    const overId = over.id;
-
-    if (activeId === overId) return;
-
-    const isActiveAColumn = active.data.current?.type === "Column";
-    if (!isActiveAColumn) return;
-
-    console.log("DRAG END");
-
-    setColumns((columns) => {
-      const activeColumnIndex = columns.findIndex((col) => col.id === activeId);
-
-      const overColumnIndex = columns.findIndex((col) => col.id === overId);
-
-      return arrayMove(columns, activeColumnIndex, overColumnIndex);
-    });
-  }
-
-  function onDragOver(event: DragOverEvent) {
-    const { active, over } = event;
-    if (!over) return;
-
-    const activeId = active.id;
-    const overId = over.id;
-
-    if (activeId === overId) return;
-
-    const isActiveATask = active.data.current?.type === "Task";
-    const isOverATask = over.data.current?.type === "Task";
-
-    if (!isActiveATask) return;
-
-    // Im dropping a Task over another Task
-    if (isActiveATask && isOverATask) {
-      setTasks((tasks) => {
-        const activeIndex = tasks.findIndex((t) => t.id === activeId);
-        const overIndex = tasks.findIndex((t) => t.id === overId);
-
-        if (tasks[activeIndex].columnId != tasks[overIndex].columnId) {
-          // Fix introduced after video recording
-          tasks[activeIndex].columnId = tasks[overIndex].columnId;
-          return arrayMove(tasks, activeIndex, overIndex - 1);
-        }
-
-        return arrayMove(tasks, activeIndex, overIndex);
-      });
-    }
-
-    const isOverAColumn = over.data.current?.type === "Column";
-
-    // Im dropping a Task over a column
-    if (isActiveATask && isOverAColumn) {
-      setTasks((tasks) => {
-        const activeIndex = tasks.findIndex((t) => t.id === activeId);
-
-        tasks[activeIndex].columnId = overId;
-        console.log("DROPPING TASK OVER COLUMN", { activeIndex });
-        return arrayMove(tasks, activeIndex, activeIndex);
-      });
-    }
-  }
-}
-
-function generateId() {
-  /* Generate a random number between 0 and 10000 */
-  return Math.floor(Math.random() * 10001);
-}
-
-export default KanbanBoard;
+  // DOING
+  {
+    title: "Refactor context providers to use Zustand",
+    id: "8",
+    column: "doing",
+  },
+  { title: "Add logging to daily CRON", id: "9", column: "doing" },
+  // DONE
+  {
+    title: "Set up DD dashboards for Lambda listener",
+    id: "10",
+    column: "done",
+  },
+];

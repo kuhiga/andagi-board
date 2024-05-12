@@ -5,12 +5,13 @@
   "language": "en",
   // words - list of words to be always considered correct
   "words": [
-    "mkdirp",
-    "kanban",
     "githubusercontent",
+    "kanban",
+    "mkdirp",
     "streetsidesoftware",
-    "vsmarketplacebadge",
-    "visualstudio"
+    "towatch",
+    "visualstudio",
+    "vsmarketplacebadge"
   ],
   // flagWords - list of words to be always considered incorrect
   // This is useful for offensive words and common spelling errors.
